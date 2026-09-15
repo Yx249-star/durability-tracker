@@ -199,12 +199,22 @@
     border:1px solid var(--border); border-radius:6px; padding:1px 7px; white-space:nowrap;
   }
   .fn-tag.proj-tag{ color:var(--accent); border-color:var(--accent); background:transparent; }
+  .org-block{ margin:0 0 26px 4px; padding-left:14px; border-left:3px solid var(--accent); }
   .org-head{
     display:flex; align-items:baseline; gap:10px; margin:0 0 14px; flex-wrap:wrap;
-    padding-bottom:8px; border-bottom:2px solid var(--accent);
   }
-  .org-head h2{ margin:0; font-size:20px; font-weight:700; }
+  .org-head h3{ margin:0; font-size:16px; font-weight:700; color:var(--accent); }
   .org-head .count{ font-size:12.5px; color:var(--sub); }
+  .owner-block{ margin-bottom:22px; padding-left:14px; border-left:3px solid var(--border); }
+  .owner-title{
+    display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:var(--ink);
+    margin:0 0 10px;
+  }
+  .owner-title .n{
+    font-family:"IBM Plex Mono", monospace; font-weight:600; font-size:11px; color:var(--sub);
+    background:var(--surface-2); border:1px solid var(--border); border-radius:99px; padding:1px 9px;
+  }
+  .owner-title .n.bad{ color:var(--bad); background:var(--bad-bg); border-color:var(--bad); }
   .task .desc{ font-size:14px; font-weight:600; line-height:1.35; text-wrap:balance; }
   .task .desc-en{ font-size:11.5px; color:var(--sub); font-style:italic; margin-top:1px; line-height:1.4; }
   .task .action{ font-size:13px; color:var(--sub); line-height:1.5; margin-top:3px; }
@@ -483,40 +493,76 @@
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  function renderProjects(){
-    const el = document.getElementById('projects');
-    el.innerHTML = ORGS.map(org => {
-      const ts = allTasks.filter(t => ownerOrg(t.owner) === org);
-      if(!ts.length) return '';
-      const overdue = ts.filter(t => t.status !== 'Closed' && dueBucket(t) === 'bad');
-      const soon = ts.filter(t => t.status !== 'Closed' && dueBucket(t) === 'warn');
-      const inProgress = ts.filter(t => t.status !== 'Closed' && dueBucket(t) === 'ok');
-      const hold = ts.filter(t => t.status === 'On hold');
-      const closed = ts.filter(t => t.status === 'Closed');
-      const openCount = ts.filter(t => t.status !== 'Closed').length;
+  function earliestDueSort(a, b){
+    const da = parseISO(a.dueDate), db_ = parseISO(b.dueDate);
+    if(!da && !db_) return 0;
+    if(!da) return 1;
+    if(!db_) return -1;
+    return da - db_;
+  }
 
-      function group(title, cls, list){
-        if(!list.length) return '';
-        return '<div class="group">' +
-          '<p class="group-title ' + cls + '">' + title + '<span class="n tab">' + list.length + '</span></p>' +
-          '<div class="task-list">' + list.map(taskCard).join('') + '</div>' +
-        '</div>';
-      }
+  function ownerBlocksHtml(ts){
+    const byOwner = {};
+    ts.forEach(t => {
+      const key = t.owner || '（未指定）';
+      (byOwner[key] = byOwner[key] || []).push(t);
+    });
 
-      const closedBlock = closed.length ? (
+    // order owners by their most urgent open task first (earliest due date among non-closed)
+    const owners = Object.keys(byOwner).sort((oa, ob) => {
+      const openA = byOwner[oa].filter(t => t.status !== 'Closed').sort(earliestDueSort);
+      const openB = byOwner[ob].filter(t => t.status !== 'Closed').sort(earliestDueSort);
+      if(!openA.length && !openB.length) return oa.localeCompare(ob);
+      if(!openA.length) return 1;
+      if(!openB.length) return -1;
+      return earliestDueSort(openA[0], openB[0]);
+    });
+
+    return owners.map(owner => {
+      const list = byOwner[owner];
+      const open = list.filter(t => t.status !== 'Closed').sort(earliestDueSort);
+      const closed = list.filter(t => t.status === 'Closed').sort(earliestDueSort);
+      const overdueCount = open.filter(t => dueBucket(t) === 'bad').length;
+
+      const openHtml = open.length ? '<div class="task-list">' + open.map(taskCard).join('') + '</div>' : '';
+      const closedHtml = closed.length ? (
         '<details class="closed-group">' +
           '<summary>已完成 (' + closed.length + ')</summary>' +
           '<div class="task-list">' + closed.map(taskCard).join('') + '</div>' +
         '</details>'
       ) : '';
+      if(!open.length && !closed.length) return '';
+
+      return '<div class="owner-block">' +
+        '<p class="owner-title">👤 ' + escapeHtml(owner) +
+          '<span class="n tab">' + open.length + ' 进行中</span>' +
+          (overdueCount ? '<span class="n tab bad">' + overdueCount + ' 逾期</span>' : '') +
+        '</p>' +
+        openHtml + closedHtml +
+      '</div>';
+    }).join('');
+  }
+
+  function renderProjects(){
+    const el = document.getElementById('projects');
+    el.innerHTML = PROJECTS.map(proj => {
+      const projTasks = allTasks.filter(t => t.project === proj);
+      if(!projTasks.length) return '';
+      const projOpenCount = projTasks.filter(t => t.status !== 'Closed').length;
+
+      const orgSections = ORGS.map(org => {
+        const ts = projTasks.filter(t => ownerOrg(t.owner) === org);
+        if(!ts.length) return '';
+        const openCount = ts.filter(t => t.status !== 'Closed').length;
+        return '<div class="org-block">' +
+          '<div class="org-head"><h3>' + ORG_LABELS[org] + '</h3><span class="count">' + openCount + ' 进行中 / ' + ts.length + ' 共计</span></div>' +
+          ownerBlocksHtml(ts) +
+        '</div>';
+      }).join('');
 
       return '<section class="project">' +
-        '<div class="org-head"><h2>' + ORG_LABELS[org] + '</h2><span class="count">' + openCount + ' 进行中 / ' + ts.length + ' 共计</span></div>' +
-        group('逾期', 'bad', overdue) +
-        group('3天内到期', 'warn', soon) +
-        group('进行中', '', inProgress.filter(t => t.status !== 'On hold')) +
-        group('搁置中', '', hold) +
-        closedBlock +
+        '<div class="project-head"><h2>' + projectLabel(proj) + '</h2><span class="count">' + projOpenCount + ' 进行中 / ' + projTasks.length + ' 共计</span></div>' +
+        orgSections +
       '</section>';
     }).join('') || '<p class="empty">暂无数据</p>';
 
