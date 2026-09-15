@@ -198,6 +198,13 @@
     font-size:11px; font-weight:600; color:var(--sub); background:var(--surface-2);
     border:1px solid var(--border); border-radius:6px; padding:1px 7px; white-space:nowrap;
   }
+  .fn-tag.proj-tag{ color:var(--accent); border-color:var(--accent); background:transparent; }
+  .org-head{
+    display:flex; align-items:baseline; gap:10px; margin:0 0 14px; flex-wrap:wrap;
+    padding-bottom:8px; border-bottom:2px solid var(--accent);
+  }
+  .org-head h2{ margin:0; font-size:20px; font-weight:700; }
+  .org-head .count{ font-size:12.5px; color:var(--sub); }
   .task .desc{ font-size:14px; font-weight:600; line-height:1.35; text-wrap:balance; }
   .task .desc-en{ font-size:11.5px; color:var(--sub); font-style:italic; margin-top:1px; line-height:1.4; }
   .task .action{ font-size:13px; color:var(--sub); line-height:1.5; margin-top:3px; }
@@ -325,6 +332,20 @@
   function statusLabel(s){ return STATUS_LABELS[s] || s || '—'; }
   function projectLabel(p){ return PROJECT_LABELS[p] || p || '—'; }
 
+  // owner -> organization, confirmed by user against the workshop attendee list
+  const OT_OWNERS = ["OT Site Leads","Zhiwen Liu","Samantha Coley","Zolbayar Enkhbat","REs",
+    "Richard Ganza","Bayarbold Samdanpurev & REs","OT (RGanza)","OT REs","OT REs & Planner"];
+  const QY_OWNERS = ["Guojun Zhang","Du Jinpeng","Chengyu Wu","Mr Gao","Tonly","Stanley Shi"];
+  const ORGS = ["OT","QY","NOTE"];
+  const ORG_LABELS = {"OT":"力拓（OT）","QY":"启源","NOTE":"仅备案（Note Only）"};
+  function ownerOrg(owner){
+    if(!owner) return 'OT';
+    if(owner === 'Note Only') return 'NOTE';
+    if(QY_OWNERS.includes(owner)) return 'QY';
+    if(OT_OWNERS.includes(owner)) return 'OT';
+    return 'OT';
+  }
+
   function toDateOnly(d){ const x = new Date(d); x.setHours(0,0,0,0); return x; }
   function todayDateOnly(){ return toDateOnly(new Date()); }
   function parseISO(s){ if(!s) return null; const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
@@ -428,7 +449,7 @@
     '<div class="task' + (isClosed ? ' is-closed' : '') + '" data-ref="' + t.ref + '">' +
       '<div class="ref">' + t.ref + '</div>' +
       '<div class="body">' +
-        '<div class="row1"><span class="fn-tag">' + fnLabel(t.function) + '</span></div>' +
+        '<div class="row1"><span class="fn-tag">' + fnLabel(t.function) + '</span><span class="fn-tag proj-tag">' + (t.project==='Battery Swapping Station'?'换电站':'Tonly卡车') + '</span></div>' +
         '<div class="desc">' + escapeHtml(t.description||'') + '</div>' +
         (t.descriptionEn ? '<div class="desc-en">' + escapeHtml(t.descriptionEn) + '</div>' : '') +
         (t.action ? '<div class="action">' + escapeHtml(t.action) + '</div>' : '') +
@@ -464,8 +485,8 @@
 
   function renderProjects(){
     const el = document.getElementById('projects');
-    el.innerHTML = PROJECTS.map(p => {
-      const ts = allTasks.filter(t => t.project === p);
+    el.innerHTML = ORGS.map(org => {
+      const ts = allTasks.filter(t => ownerOrg(t.owner) === org);
       if(!ts.length) return '';
       const overdue = ts.filter(t => t.status !== 'Closed' && dueBucket(t) === 'bad');
       const soon = ts.filter(t => t.status !== 'Closed' && dueBucket(t) === 'warn');
@@ -490,7 +511,7 @@
       ) : '';
 
       return '<section class="project">' +
-        '<div class="project-head"><h2>' + projectLabel(p) + '</h2><span class="count">' + openCount + ' 进行中 / ' + ts.length + ' 共计</span></div>' +
+        '<div class="org-head"><h2>' + ORG_LABELS[org] + '</h2><span class="count">' + openCount + ' 进行中 / ' + ts.length + ' 共计</span></div>' +
         group('逾期', 'bad', overdue) +
         group('3天内到期', 'warn', soon) +
         group('进行中', '', inProgress.filter(t => t.status !== 'On hold')) +
